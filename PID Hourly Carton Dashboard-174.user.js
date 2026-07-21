@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PID Hourly Carton Dashboard
 // @namespace    https://tampermonkey.net/
-// @version      173
+// @version      174
 // @author       sainzjon (Jonathon Sainz)
 // @description  Full-page overlay UI to run hourly PID carton totals using Combine Cartons logic (NVF + Trans-In Case + Trans-In Tote). Adds shift variance, Sort/PreSort tracking, PRE/POST presets, per-hour stall watchdog, and per-hour Inbound CPLH (Cartons Per Labor Hour). Night POST gets fixed 16.2% of daily goal (20.5% on SET).
 // @match        https://fclm-portal.amazon.com/reports/processPath*
@@ -23,7 +23,7 @@
   'use strict';
 
   console.log('═══════════════════════════════════════════════════');
-  console.log('PID Hourly Carton Dashboard v173 - Script Starting');
+  console.log('PID Hourly Carton Dashboard v174 - Script Starting');
   console.log('═══════════════════════════════════════════════════');
 
   // ---------- CONFIG ----------
@@ -1938,12 +1938,20 @@
           prGoalColIdx = 20;
         }
 
-        console.log('Hour column index:', hourColIdx, 'TCC Goal column index:', tccGoalColIdx, 'PID Goal column index:', goalColIdx, 'PR Goal column index:', prGoalColIdx);
+        // Find "Trans In PID Carton Goal" column (TI Carton Goal)
+        let tiGoalColIdx = header.findIndex(h => h.trim().toLowerCase() === 'trans in pid carton goal');
+        if (tiGoalColIdx === -1) {
+          // If not found, try the column right after PID Carton Goal
+          tiGoalColIdx = goalColIdx + 1;
+        }
+
+        console.log('Hour column index:', hourColIdx, 'TCC Goal column index:', tccGoalColIdx, 'PID Goal column index:', goalColIdx, 'PR Goal column index:', prGoalColIdx, 'TI Goal column index:', tiGoalColIdx);
         console.log('Header:', header);
 
         let goalsUpdated = 0;
         let tccGoalsUpdated = 0;
         let prGoalsUpdated = 0;
+        let tiGoalsUpdated = 0;
 
         for (let i = 1; i < lines.length; i++) {
           const cols = csvParseLine(lines[i]);
@@ -1951,8 +1959,9 @@
           const goalValue = cols[goalColIdx]?.trim();
           const tccGoalValue = cols[tccGoalColIdx]?.trim();
           const prGoalValue = cols[prGoalColIdx]?.trim();
+          const tiGoalValue = cols[tiGoalColIdx]?.trim();
 
-          console.log(`Row ${i}: Hour="${hourValue}", PID Goal="${goalValue}", TCC Goal="${tccGoalValue}", PR Goal="${prGoalValue}"`);
+          console.log(`Row ${i}: Hour="${hourValue}", PID Goal="${goalValue}", TCC Goal="${tccGoalValue}", PR Goal="${prGoalValue}", TI Goal="${tiGoalValue}"`);
 
           if (!hourValue) continue;
 
@@ -2008,16 +2017,26 @@
                 console.log(`Updated hour ${hourStr} with PR goal ${prGoalNum}`);
               }
             }
+
+            // Update TI Carton Goal
+            if (tiGoalValue) {
+              const tiGoalNum = parseInt(tiGoalValue.replace(/[^\d]/g, '')) || 0;
+              if (tiGoalNum > 0) {
+                state.tiGoals[hourStr] = tiGoalNum;
+                tiGoalsUpdated++;
+                console.log(`Updated hour ${hourStr} with TI goal ${tiGoalNum}`);
+              }
+            }
           }
         }
 
-        if (goalsUpdated > 0 || tccGoalsUpdated > 0 || prGoalsUpdated > 0) {
+        if (goalsUpdated > 0 || tccGoalsUpdated > 0 || prGoalsUpdated > 0 || tiGoalsUpdated > 0) {
           saveState();
           refreshTable();
           updateTotals();
-          alert(`✓ Successfully imported ${goalsUpdated} PID goals, ${tccGoalsUpdated} TCC goals, and ${prGoalsUpdated} PR goals from CSV!`);
+          alert(`✓ Successfully imported ${goalsUpdated} PID goals, ${tccGoalsUpdated} TCC goals, ${tiGoalsUpdated} TI goals, and ${prGoalsUpdated} PR goals from CSV!`);
         } else {
-          alert('No valid goal data found in CSV.\n\nMake sure:\n- Column C has PST times (e.g., "06:00a")\n- Column L has PID Carton Goal numbers\n- Column I has TCC Goal numbers\n- Column U has PR Goal numbers');
+          alert('No valid goal data found in CSV.\n\nMake sure:\n- Column C has PST times (e.g., "06:00a")\n- Column L has PID Carton Goal numbers\n- Column I has TCC Goal numbers\n- Trans In PID Carton Goal column has TI Goal numbers\n- Column U has PR Goal numbers');
         }
 
       } catch (error) {
