@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         PID Hourly Carton Dashboard
 // @namespace    https://tampermonkey.net/
-// @version      177
+// @version      178
 // @author       sainzjon (Jonathon Sainz)
-// @description  Full-page overlay UI to run hourly PID carton totals using Combine Cartons logic (NVF + Trans-In Case + Trans-In Tote). Adds shift variance, Sort/PreSort tracking, PRE/POST presets, per-hour stall watchdog, per-hour Inbound CPLH (Cartons Per Labor Hour), a selectable Site so data can be pulled for FCs other than the current page's, and a reorganized toolbar layout. Night POST gets fixed 16.2% of daily goal (20.5% on SET).
+// @description  Full-page overlay UI to run hourly PID carton totals using Combine Cartons logic (NVF + Trans-In Case + Trans-In Tote). Adds shift variance, Sort/PreSort tracking, PRE/POST presets, per-hour stall watchdog, per-hour Inbound CPLH (Cartons Per Labor Hour), a Site switcher in the header so data can be pulled for FCs other than the current page's, and a wide, reorganized layout that keeps every hourly column (including PreSort) in view. Night POST gets fixed 16.2% of daily goal (20.5% on SET).
 // @match        https://fclm-portal.amazon.com/reports/processPath*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=amazon.com
 // @grant        GM_addStyle
@@ -23,7 +23,7 @@
   'use strict';
 
   console.log('═══════════════════════════════════════════════════');
-  console.log('PID Hourly Carton Dashboard v177 - Script Starting');
+  console.log('PID Hourly Carton Dashboard v178 - Script Starting');
   console.log('═══════════════════════════════════════════════════');
 
   // ---------- CONFIG ----------
@@ -1064,13 +1064,17 @@
       #pidDashPill{position:fixed;right:18px;bottom:18px;z-index:999999;background:#232f3e;color:#fff;border-radius:28px;padding:10px 14px;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.2);font:600 13px/1.2 system-ui,Segoe UI,Arial;}
       #pidDashPill .smile{display:inline-block;width:18px;height:10px;border-bottom:3px solid #ff9900;border-radius:0 0 70px 70px;margin-left:8px;}
       #pidDash{position:fixed;inset:0;background:#232f3eF2;color:#111;z-index:999998;display:none;align-items:center;justify-content:center;}
-      #pidDash .sheet{width:1400px;max-width:95vw;max-height:90vh;background:#fff;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:auto;}
-      #pidDash header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 16px;background:#232f3e;color:#fff;border-bottom:3px solid #ff9900;flex-wrap:wrap;}
+      #pidDash .sheet{width:1900px;max-width:98vw;max-height:90vh;background:#fff;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden;display:flex;flex-direction:column;}
+      #pidDash header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 16px;background:#232f3e;color:#fff;border-bottom:3px solid #ff9900;flex-wrap:wrap;flex-shrink:0;}
       #pidDash header .headerLeft{display:flex;align-items:center;gap:12px;}
       #pidDash header .peccy{width:40px;height:40px;}
       #pidDash header h1{margin:0;font:700 16px/1 system-ui,Segoe UI,Arial;display:flex;align-items:center;gap:8px;}
       #pidDash header .by{opacity:.85;font-weight:500;font-size:11px;}
-      #pidDash header .siteBadge{display:inline-block;font:700 10px system-ui;letter-spacing:0.5px;color:#232f3e;background:#ff9900;border-radius:20px;padding:2px 9px;}
+      #pidDash header .siteControl{display:flex;align-items:center;gap:6px;background:#37475a;border:1px solid #4b5c70;border-radius:20px;padding:4px 6px 4px 12px;margin-left:4px;}
+      #pidDash header .siteControlLabel{font:700 9px system-ui;color:#aab7c4;text-transform:uppercase;letter-spacing:0.5px;}
+      #pidDash header .siteControl input{width:76px;background:#ff9900;border:none;border-radius:14px;padding:4px 10px;font:700 12px system-ui;color:#232f3e;text-align:center;text-transform:uppercase;cursor:text;}
+      #pidDash header .siteControl input:focus{outline:2px solid #fff;}
+      #pidDash header .siteControl input.overridden{background:#067d62;color:#fff;}
       #pidDash header .btn{background:#ff9900;border:0;padding:7px 12px;border-radius:6px;font:700 12px system-ui;cursor:pointer;color:#111;transition:all 0.2s;white-space:nowrap;}
       #pidDash header .btn:hover{background:#ffac31;}
       #pidDash header .btn.secondary{background:#fff;color:#232f3e;border:1px solid #d5d9d9;}
@@ -1087,20 +1091,17 @@
         .noPrint{display:none !important;}
         table.pidTbl th.noPrint,table.pidTbl td.noPrint{display:none !important;}
       }
-      #pidDash .body{padding:14px 16px 16px 16px;font:500 12px/1.3 system-ui,Segoe UI,Arial;}
+      #pidDash .body{padding:14px 16px 16px 16px;font:500 12px/1.3 system-ui,Segoe UI,Arial;overflow-y:auto;overflow-x:hidden;flex:1;min-height:0;}
 
-      /* ── Toolbar: groups Site/Date, Shift picker, and toggles into one clear control row ── */
-      .toolbar{display:grid;grid-template-columns:minmax(240px,1fr) minmax(320px,1.6fr) minmax(220px,1fr);gap:12px;align-items:stretch;margin:0 0 14px;}
+      /* ── Toolbar: groups Date, Shift picker, and toggles into one clear control row. Site
+         lives in the header ribbon instead, so this row only needs Date + a wider Shift panel. ── */
+      .toolbar{display:grid;grid-template-columns:minmax(150px,0.7fr) minmax(460px,2.3fr) minmax(220px,1fr);gap:12px;align-items:stretch;margin:0 0 14px;}
       .toolbarSection{background:#f7f8f8;border:2px solid #d5d9d9;border-radius:8px;padding:10px 14px;display:flex;flex-direction:column;gap:8px;justify-content:center;}
       .toolbarSection .sectionLabel{font:700 9px system-ui;color:#687078;text-transform:uppercase;letter-spacing:0.6px;}
       .toolField{display:flex;flex-direction:column;gap:4px;}
       .toolField label{font:600 11px system-ui;color:#232f3e;}
-      .toolField input[type=date],.toolField input[type=text]{padding:6px 10px;border:2px solid #d5d9d9;border-radius:6px;font:600 12px system-ui;background:#fff;}
-      .toolField input[type=date]:focus,.toolField input[type=text]:focus{outline:none;border-color:#ff9900;}
-      .toolFieldRow{display:flex;gap:10px;}
-      .toolFieldRow .toolField{flex:1;min-width:0;}
-      #siteInput{text-transform:uppercase;}
-      .siteHint{font:500 9px system-ui;color:#8a929b;}
+      .toolField input[type=date]{padding:6px 10px;border:2px solid #d5d9d9;border-radius:6px;font:600 12px system-ui;background:#fff;}
+      .toolField input[type=date]:focus{outline:none;border-color:#ff9900;}
       .shiftSelector{display:flex;gap:6px;flex-wrap:wrap;}
       .shiftSelector .shiftBtn{background:#fff;color:#232f3e;border:2px solid #d5d9d9;padding:8px 10px;border-radius:6px;cursor:pointer;font:700 11px system-ui;transition:all 0.2s;flex:1;min-width:90px;text-align:center;}
       .shiftSelector .shiftBtn:hover{background:#fff;border-color:#ff9900;}
@@ -1192,11 +1193,12 @@
       .controls{display:flex;gap:8px;align-items:center;margin:0 0 10px;flex-wrap:wrap;}
       .controls label{font:600 11px system-ui;color:#232f3e;}
       .controls input[type=number]{width:100px;text-align:right;padding:5px 8px;border:2px solid #d5d9d9;border-radius:6px;font:600 12px system-ui;}
-      table.pidTbl{width:100%;border-collapse:collapse;margin-top:8px;font-size:12px;}
-      table.pidTbl th,table.pidTbl td{padding:8px 10px;border-bottom:1px solid #e7e9ec;text-align:right;}
+      .tableScroll{overflow-x:auto;}
+      table.pidTbl{width:100%;border-collapse:collapse;margin-top:8px;font-size:11.5px;}
+      table.pidTbl th,table.pidTbl td{padding:6px 8px;border-bottom:1px solid #e7e9ec;text-align:right;}
       table.pidTbl th:first-child,table.pidTbl td:first-child{text-align:left;}
       table.pidTbl th:last-child,table.pidTbl td:last-child{text-align:center;}
-      table.pidTbl th{background:#f7f8f8;color:#232f3e;font-weight:700;text-transform:uppercase;font-size:10px;letter-spacing:0.3px;position:sticky;top:0;z-index:10;}
+      table.pidTbl th{background:#f7f8f8;color:#232f3e;font-weight:700;text-transform:uppercase;font-size:9.5px;letter-spacing:0.3px;position:sticky;top:0;z-index:10;}
       .cumulative{display:block;font-size:9px;color:#687078;font-weight:400;margin-top:2px;}
       .cumulative::before{content:"↗ ";}
       table.pidTbl tbody tr{transition:background 0.2s;}
@@ -1468,8 +1470,13 @@
           <div class="headerLeft">
             <img src="https://drive-render.corp.amazon.com/view/sainzjon@/Images/Peccy%20(40%20x%2040%20px).png">
             <div>
-              <h1>Hourly Dashboard <span class="siteBadge" id="siteBadge">—</span></h1>
+              <h1>Hourly Dashboard</h1>
               <div class="by">@sainzjon</div>
+            </div>
+            <div class="siteControl noPrint" title="Change the site to pull data for a different FC">
+              <span class="siteControlLabel">Site</span>
+              <input type="text" id="siteInput" list="siteSuggestions" placeholder="ONT8" maxlength="12" autocomplete="off" />
+              <datalist id="siteSuggestions"></datalist>
             </div>
           </div>
           <div class="seg noPrint">
@@ -1508,20 +1515,11 @@
         </header>
         <div class="body">
           <div class="toolbar noPrint">
-            <div class="toolbarSection" id="siteDateSection">
-              <div class="sectionLabel">Site &amp; Date</div>
-              <div class="toolFieldRow">
-                <div class="toolField">
-                  <label for="siteInput">Site</label>
-                  <input type="text" id="siteInput" list="siteSuggestions" placeholder="e.g. ONT8" maxlength="12" autocomplete="off" />
-                  <datalist id="siteSuggestions"></datalist>
-                </div>
-                <div class="toolField">
-                  <label for="pidDatePicker">Date</label>
-                  <input type="date" id="pidDatePicker" value="${state.selectedDate || getCurrentDatePST()}" />
-                </div>
+            <div class="toolbarSection" id="dateSection">
+              <div class="sectionLabel">Date</div>
+              <div class="toolField">
+                <input type="date" id="pidDatePicker" value="${state.selectedDate || getCurrentDatePST()}" />
               </div>
-              <div class="siteHint" id="siteHint"></div>
             </div>
 
             <div class="toolbarSection">
@@ -1554,14 +1552,16 @@
 
           <div class="topMetrics" id="topMetrics"></div>
 
-          <table class="pidTbl" id="pidTbl">
-            <thead><tr><th class="noPrint" style="width:60px;">● Run</th><th>PST</th><th>TCC Goal</th><th>TCC</th><th>TCC Δ</th><th>TCC %</th><th>PID Carton Goal</th><th>PID Carton</th><th>PID Δ</th><th>PID %</th><th>TI Carton Goal</th><th>TI Carton</th><th>TI Δ</th><th>TI %</th><th>TP CPLH</th><th>PR</th><th>Lost TI</th><th>PID DPMO</th><th>Sort Goal</th><th>Sort</th><th>Sort Δ</th><th>Sort %</th><th>PreSort Goal</th><th>PreSort</th><th>PreSort Δ</th><th>PreSort %</th></tr></thead>
-            <tbody></tbody>
-            <tfoot>
-              <tr><td class="noPrint"></td><td>Total</td><td id="tTCCGoal">0</td><td id="tTCC">0</td><td id="tTCCDelta">0</td><td id="tTCCPct">—</td><td id="tGoal">0</td><td id="tCartons">0</td><td id="tDelta">0</td><td id="tPct">—</td><td id="tTIGoal">0</td><td id="tTI">0</td><td id="tTIDelta">0</td><td id="tTIPct">—</td><td id="tCPLH">—</td><td id="tPR">0</td><td id="tLostTI">—</td><td id="tDPMO">—</td><td id="tSortGoal">0</td><td id="tSort">0</td><td id="tSortDelta">0</td><td id="tSortPct">—</td><td id="tPreSortGoal">0</td><td id="tPreSort">0</td><td id="tPreSortDelta">0</td><td id="tPreSortPct">—</td></tr>
-              <tr style="background:#37475a;"><td class="noPrint"></td><td colspan="25" id="nvfTiBreakdown" style="text-align:center;padding:8px;font-size:13px;">—</td></tr>
-            </tfoot>
-          </table>
+          <div class="tableScroll">
+            <table class="pidTbl" id="pidTbl">
+              <thead><tr><th class="noPrint" style="width:60px;">● Run</th><th>PST</th><th>TCC Goal</th><th>TCC</th><th>TCC Δ</th><th>TCC %</th><th>PID Carton Goal</th><th>PID Carton</th><th>PID Δ</th><th>PID %</th><th>TI Carton Goal</th><th>TI Carton</th><th>TI Δ</th><th>TI %</th><th>TP CPLH</th><th>PR</th><th>Lost TI</th><th>PID DPMO</th><th>Sort Goal</th><th>Sort</th><th>Sort Δ</th><th>Sort %</th><th>PreSort Goal</th><th>PreSort</th><th>PreSort Δ</th><th>PreSort %</th></tr></thead>
+              <tbody></tbody>
+              <tfoot>
+                <tr><td class="noPrint"></td><td>Total</td><td id="tTCCGoal">0</td><td id="tTCC">0</td><td id="tTCCDelta">0</td><td id="tTCCPct">—</td><td id="tGoal">0</td><td id="tCartons">0</td><td id="tDelta">0</td><td id="tPct">—</td><td id="tTIGoal">0</td><td id="tTI">0</td><td id="tTIDelta">0</td><td id="tTIPct">—</td><td id="tCPLH">—</td><td id="tPR">0</td><td id="tLostTI">—</td><td id="tDPMO">—</td><td id="tSortGoal">0</td><td id="tSort">0</td><td id="tSortDelta">0</td><td id="tSortPct">—</td><td id="tPreSortGoal">0</td><td id="tPreSort">0</td><td id="tPreSortDelta">0</td><td id="tPreSortPct">—</td></tr>
+                <tr style="background:#37475a;"><td class="noPrint"></td><td colspan="25" id="nvfTiBreakdown" style="text-align:center;padding:8px;font-size:13px;">—</td></tr>
+              </tfoot>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -1642,19 +1642,18 @@
     // getWarehouseId() for every subsequent fetch until changed again.
     const siteInput = qs('#siteInput', wrap);
     const siteSuggestions = qs('#siteSuggestions', wrap);
-    const siteBadge = qs('#siteBadge', wrap);
-    const siteHint = qs('#siteHint', wrap);
     const urlSite = getDefaultSiteFromUrl();
 
     function renderSiteSuggestions() {
       const options = Array.from(new Set([urlSite, ...state.recentSites]));
       siteSuggestions.innerHTML = options.map(s => `<option value="${s}"></option>`).join('');
     }
-    function updateSiteBadge() {
-      siteBadge.textContent = getWarehouseId();
-      siteHint.textContent = state.selectedSite && state.selectedSite !== urlSite
-        ? `Overriding page site (${urlSite}) — click "Run All" to pull ${state.selectedSite} data.`
-        : `Using page site. Type a different site code to pull data from elsewhere.`;
+    function updateSiteIndicator() {
+      const overridden = !!(state.selectedSite && state.selectedSite !== urlSite);
+      siteInput.classList.toggle('overridden', overridden);
+      siteInput.title = overridden
+        ? `Overriding page site (${urlSite}) — click "Run All" to pull ${getWarehouseId()} data.`
+        : `Site for data pulls (currently ${getWarehouseId()}). Type a different site code to pull data from elsewhere.`;
     }
     function commitSite(raw) {
       const site = String(raw || '').trim().toUpperCase();
@@ -1667,12 +1666,12 @@
       }
       saveState();
       renderSiteSuggestions();
-      updateSiteBadge();
+      updateSiteIndicator();
     }
 
     siteInput.value = state.selectedSite || urlSite;
     renderSiteSuggestions();
-    updateSiteBadge();
+    updateSiteIndicator();
 
     siteInput.addEventListener('change', (e) => commitSite(e.target.value));
     siteInput.addEventListener('keydown', (e) => {
