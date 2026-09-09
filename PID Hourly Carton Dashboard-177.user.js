@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         PID Hourly Carton Dashboard
 // @namespace    https://tampermonkey.net/
-// @version      176
+// @version      177
 // @author       sainzjon (Jonathon Sainz)
-// @description  Full-page overlay UI to run hourly PID carton totals using Combine Cartons logic (NVF + Trans-In Case + Trans-In Tote). Adds shift variance, Sort/PreSort tracking, PRE/POST presets, per-hour stall watchdog, and per-hour Inbound CPLH (Cartons Per Labor Hour). Night POST gets fixed 16.2% of daily goal (20.5% on SET).
+// @description  Full-page overlay UI to run hourly PID carton totals using Combine Cartons logic (NVF + Trans-In Case + Trans-In Tote). Adds shift variance, Sort/PreSort tracking, PRE/POST presets, per-hour stall watchdog, per-hour Inbound CPLH (Cartons Per Labor Hour), a selectable Site so data can be pulled for FCs other than the current page's, and a reorganized toolbar layout. Night POST gets fixed 16.2% of daily goal (20.5% on SET).
 // @match        https://fclm-portal.amazon.com/reports/processPath*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=amazon.com
 // @grant        GM_addStyle
@@ -23,7 +23,7 @@
   'use strict';
 
   console.log('═══════════════════════════════════════════════════');
-  console.log('PID Hourly Carton Dashboard v176 - Script Starting');
+  console.log('PID Hourly Carton Dashboard v177 - Script Starting');
   console.log('═══════════════════════════════════════════════════');
 
   // ---------- CONFIG ----------
@@ -107,6 +107,9 @@
       hourlyData: {},
       prShiftGoal: 0,
       selectedDate: todayISO,
+      // Site selection — null means "use the warehouseId from the page URL"
+      selectedSite: null,
+      recentSites: [],
       tcc12x12Goal: 0,
       pid12x12Goal: 0,
       pr12x12Goal: 0,
@@ -144,6 +147,8 @@
       if (!o.hourlyData) o.hourlyData = {};
       if (typeof o.prShiftGoal !== 'number') o.prShiftGoal = 0;
       if (!o.selectedDate) o.selectedDate = todayISO;
+      if (typeof o.selectedSite !== 'string' || !o.selectedSite.trim()) o.selectedSite = null;
+      if (!Array.isArray(o.recentSites)) o.recentSites = [];
       if (typeof o.tcc12x12Goal !== 'number') o.tcc12x12Goal = 0;
       if (typeof o.pid12x12Goal !== 'number') o.pid12x12Goal = 0;
       if (typeof o.pr12x12Goal !== 'number') o.pr12x12Goal = 0;
@@ -175,6 +180,8 @@
         hourlyData: {},
         prShiftGoal: 0,
         selectedDate: todayISO,
+        selectedSite: null,
+        recentSites: [],
         tcc12x12Goal: 0,
         pid12x12Goal: 0,
         pr12x12Goal: 0,
@@ -186,7 +193,7 @@
     }
   }
   function saveState() {
-    const { goals, tccGoals, prGoals, tiGoals, sortGoals, preSortGoals, selectedShifts, open, tccVarianceByShift, pidVarianceByShift, tccVarianceDisplay, pidVarianceDisplay, varianceEnabled, autoRefreshEnabled, hourlyData, prShiftGoal, selectedDate, tcc12x12Goal, pid12x12Goal, pr12x12Goal, ti12x12Goal, sort12x12Goal, preSort12x12Goal, scheduleType } = state;
+    const { goals, tccGoals, prGoals, tiGoals, sortGoals, preSortGoals, selectedShifts, open, tccVarianceByShift, pidVarianceByShift, tccVarianceDisplay, pidVarianceDisplay, varianceEnabled, autoRefreshEnabled, hourlyData, prShiftGoal, selectedDate, selectedSite, recentSites, tcc12x12Goal, pid12x12Goal, pr12x12Goal, ti12x12Goal, sort12x12Goal, preSort12x12Goal, scheduleType } = state;
     GM_setValue(CFG.storageKey, JSON.stringify({
       goals,
       tccGoals,
@@ -205,6 +212,8 @@
       hourlyData,
       prShiftGoal,
       selectedDate,
+      selectedSite,
+      recentSites,
       tcc12x12Goal,
       pid12x12Goal,
       pr12x12Goal,
@@ -345,9 +354,21 @@
   }
 
   function getWarehouseId() {
+    // A user-selected site (via the Site field) always wins so the dashboard
+    // can pull data for FCs other than the one in the current page URL.
+    if (state.selectedSite) return state.selectedSite;
     try {
       const p = new URLSearchParams(location.search);
       return p.get('warehouseId') || 'ONT8';
+    } catch {
+      return 'ONT8';
+    }
+  }
+
+  function getDefaultSiteFromUrl() {
+    try {
+      const p = new URLSearchParams(location.search);
+      return (p.get('warehouseId') || 'ONT8').toUpperCase();
     } catch {
       return 'ONT8';
     }
@@ -1044,19 +1065,22 @@
       #pidDashPill .smile{display:inline-block;width:18px;height:10px;border-bottom:3px solid #ff9900;border-radius:0 0 70px 70px;margin-left:8px;}
       #pidDash{position:fixed;inset:0;background:#232f3eF2;color:#111;z-index:999998;display:none;align-items:center;justify-content:center;}
       #pidDash .sheet{width:1400px;max-width:95vw;max-height:90vh;background:#fff;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:auto;}
-      #pidDash header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#232f3e;color:#fff;border-bottom:3px solid #ff9900;}
+      #pidDash header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 16px;background:#232f3e;color:#fff;border-bottom:3px solid #ff9900;flex-wrap:wrap;}
       #pidDash header .headerLeft{display:flex;align-items:center;gap:12px;}
       #pidDash header .peccy{width:40px;height:40px;}
-      #pidDash header h1{margin:0;font:700 16px/1 system-ui,Segoe UI,Arial;}
+      #pidDash header h1{margin:0;font:700 16px/1 system-ui,Segoe UI,Arial;display:flex;align-items:center;gap:8px;}
       #pidDash header .by{opacity:.85;font-weight:500;font-size:11px;}
-      #pidDash header .btn{background:#ff9900;border:0;padding:7px 12px;border-radius:6px;font:700 12px system-ui;cursor:pointer;color:#111;transition:all 0.2s;}
+      #pidDash header .siteBadge{display:inline-block;font:700 10px system-ui;letter-spacing:0.5px;color:#232f3e;background:#ff9900;border-radius:20px;padding:2px 9px;}
+      #pidDash header .btn{background:#ff9900;border:0;padding:7px 12px;border-radius:6px;font:700 12px system-ui;cursor:pointer;color:#111;transition:all 0.2s;white-space:nowrap;}
       #pidDash header .btn:hover{background:#ffac31;}
       #pidDash header .btn.secondary{background:#fff;color:#232f3e;border:1px solid #d5d9d9;}
       #pidDash header .btn.clear{background:#d13212;color:#fff;}
       #pidDash header .btn.clear:hover{background:#e94b2e;}
       #pidDash header .btn.copy{background:#067d62;color:#fff;}
       #pidDash header .btn.copy:hover{background:#0a9e7a;}
-      #pidDash header .seg{display:flex !important;gap:6px;align-items:center;}
+      #pidDash header .seg{display:flex !important;gap:10px;align-items:center;flex-wrap:wrap;}
+      #pidDash header .actionGroup{display:flex !important;align-items:center;gap:8px;padding-left:10px;border-left:1px solid rgba(255,255,255,0.18);}
+      #pidDash header .actionGroup:first-child{padding-left:0;border-left:none;}
       .noPrint{display:flex;gap:6px;align-items:center;}
       #csvFileInput{display:none !important;}
       @media print {
@@ -1064,15 +1088,25 @@
         table.pidTbl th.noPrint,table.pidTbl td.noPrint{display:none !important;}
       }
       #pidDash .body{padding:14px 16px 16px 16px;font:500 12px/1.3 system-ui,Segoe UI,Arial;}
-      .shiftSelector{display:flex;gap:6px;margin:0 0 12px;flex-wrap:wrap;}
-      .shiftSelector .shiftBtn{background:#fff;color:#232f3e;border:2px solid #d5d9d9;padding:8px 12px;border-radius:6px;cursor:pointer;font:700 11px system-ui;transition:all 0.2s;flex:1;text-align:center;}
-      .shiftSelector .shiftBtn:hover{background:#f7f8f8;border-color:#ff9900;}
+
+      /* ── Toolbar: groups Site/Date, Shift picker, and toggles into one clear control row ── */
+      .toolbar{display:grid;grid-template-columns:minmax(240px,1fr) minmax(320px,1.6fr) minmax(220px,1fr);gap:12px;align-items:stretch;margin:0 0 14px;}
+      .toolbarSection{background:#f7f8f8;border:2px solid #d5d9d9;border-radius:8px;padding:10px 14px;display:flex;flex-direction:column;gap:8px;justify-content:center;}
+      .toolbarSection .sectionLabel{font:700 9px system-ui;color:#687078;text-transform:uppercase;letter-spacing:0.6px;}
+      .toolField{display:flex;flex-direction:column;gap:4px;}
+      .toolField label{font:600 11px system-ui;color:#232f3e;}
+      .toolField input[type=date],.toolField input[type=text]{padding:6px 10px;border:2px solid #d5d9d9;border-radius:6px;font:600 12px system-ui;background:#fff;}
+      .toolField input[type=date]:focus,.toolField input[type=text]:focus{outline:none;border-color:#ff9900;}
+      .toolFieldRow{display:flex;gap:10px;}
+      .toolFieldRow .toolField{flex:1;min-width:0;}
+      #siteInput{text-transform:uppercase;}
+      .siteHint{font:500 9px system-ui;color:#8a929b;}
+      .shiftSelector{display:flex;gap:6px;flex-wrap:wrap;}
+      .shiftSelector .shiftBtn{background:#fff;color:#232f3e;border:2px solid #d5d9d9;padding:8px 10px;border-radius:6px;cursor:pointer;font:700 11px system-ui;transition:all 0.2s;flex:1;min-width:90px;text-align:center;}
+      .shiftSelector .shiftBtn:hover{background:#fff;border-color:#ff9900;}
       .shiftSelector .shiftBtn.active{background:#232f3e;color:#fff;border-color:#232f3e;}
-      .dateSelector{display:flex;gap:8px;align-items:center;margin:0 0 12px;padding:10px 14px;background:#f7f8f8;border-radius:8px;border:2px solid #d5d9d9;flex-wrap:wrap;}
-      .dateSelector label{font:600 12px system-ui;color:#232f3e;white-space:nowrap;}
-      .dateSelector input[type=date]{padding:6px 10px;border:2px solid #d5d9d9;border-radius:6px;font:600 12px system-ui;background:#fff;cursor:pointer;}
-      .dateSelector input[type=date]:focus{outline:none;border-color:#ff9900;}
-      .varianceDisplay{margin:0 0 12px;padding:10px 14px;background:#f0f9ff;border-radius:8px;border:2px solid #bae6fd;}
+      .shiftHint{font:600 9px system-ui;color:#8a929b;text-align:center;}
+      .varianceDisplay{background:#f0f9ff !important;border:2px solid #bae6fd !important;justify-content:center;}
       .varianceDisplay.disabled{opacity:0.45;pointer-events:none;}
       .varianceNote{font:600 11px system-ui;color:#0c4a6e;}
       #varianceSummary{color:#0369a1;font-weight:600;}
@@ -1434,61 +1468,80 @@
           <div class="headerLeft">
             <img src="https://drive-render.corp.amazon.com/view/sainzjon@/Images/Peccy%20(40%20x%2040%20px).png">
             <div>
-              <h1>Hourly Dashboard</h1>
+              <h1>Hourly Dashboard <span class="siteBadge" id="siteBadge">—</span></h1>
               <div class="by">@sainzjon</div>
             </div>
           </div>
           <div class="seg noPrint">
-            <button id="pidRun" class="btn">Run All</button>
-            <div id="runProgress" style="display:none;margin-left:12px;min-width:300px;">
-              <div style="display:flex;align-items:center;gap:8px;">
-                <div style="flex:1;height:6px;background:#e5e7eb;border-radius:3px;overflow:hidden;">
-                  <div id="runProgressBar" style="height:100%;background:#ff9900;width:0%;transition:width 0.3s ease;"></div>
+            <div class="actionGroup">
+              <button id="pidRun" class="btn">▶ Run All</button>
+              <div id="runProgress" style="display:none;min-width:220px;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <div style="flex:1;height:6px;background:#e5e7eb;border-radius:3px;overflow:hidden;">
+                    <div id="runProgressBar" style="height:100%;background:#ff9900;width:0%;transition:width 0.3s ease;"></div>
+                  </div>
+                  <span id="runProgressText" style="font:600 11px system-ui;color:#fff;min-width:80px;text-align:right;">0 / 0</span>
                 </div>
-                <span id="runProgressText" style="font:600 11px system-ui;color:#232f3e;min-width:80px;text-align:right;">0 / 0</span>
               </div>
             </div>
-            <div style="display:inline-flex;align-items:center;gap:8px;margin-left:10px;padding:6px 12px;background:#f7f8f8;border-radius:6px;border:2px solid #d5d9d9;">
-              <span style="font:600 11px system-ui;color:#232f3e;margin-right:4px;">Auto-Refresh (10 min)</span>
+            <div class="actionGroup">
+              <span style="font:600 11px system-ui;">Auto-Refresh</span>
               <label class="variance-toggle" style="margin:0;">
                 <input type="checkbox" id="autoRefreshToggle" ${state.autoRefreshEnabled ? 'checked' : ''}>
                 <span class="variance-toggle-slider"></span>
               </label>
-              <span id="autoRefreshCountdown" style="font:600 11px system-ui;color:#0369a1;display:none;margin-left:8px;">
+              <span id="autoRefreshCountdown" style="font:600 11px system-ui;color:#7dd3fc;display:none;">
                 <span id="countdownTimer">10:00</span>
               </span>
             </div>
-            <button id="pidCopy" class="btn" style="background:#067d62;color:#fff;">📋 Copy Image</button>
-            <button id="pidUpload" class="btn" style="background:#146eb4;color:#fff;">📤 Upload CSV</button>
-            <input type="file" id="csvFileInput" accept=".csv" style="display:none;">
-            <button id="edit12x12GoalsBtn" class="btn secondary x12EditBtn" title="Edit 12×12 daily goals">✏ Goals</button>
-            <button id="pidClear" class="btn clear">Clear</button>
-            <button id="pidClose" class="btn secondary">✕</button>
+            <div class="actionGroup">
+              <button id="pidCopy" class="btn" style="background:#067d62;color:#fff;">📋 Copy Image</button>
+              <button id="pidUpload" class="btn" style="background:#146eb4;color:#fff;">📤 Upload CSV</button>
+              <input type="file" id="csvFileInput" accept=".csv" style="display:none;">
+              <button id="edit12x12GoalsBtn" class="btn secondary x12EditBtn" title="Edit 12×12 daily goals">✏ Goals</button>
+            </div>
+            <div class="actionGroup">
+              <button id="pidClear" class="btn clear">Clear</button>
+              <button id="pidClose" class="btn secondary">✕</button>
+            </div>
           </div>
         </header>
         <div class="body">
-          <div class="shiftSelector noPrint" id="shiftSelector"></div>
-          <div style="font:600 10px system-ui;color:#6b7280;margin:-8px 0 10px 0;text-align:center;">
-            Hold CTRL to select multiple shifts
-          </div>
-
-          <div class="dateSelector noPrint" id="dateSelector">
-            <label for="pidDatePicker">Date:</label>
-            <input type="date" id="pidDatePicker" value="${state.selectedDate || getCurrentDatePST()}" />
-          </div>
-
-          <div class="varianceDisplay noPrint" id="varianceDisplay">
-            <div id="deltaDisabledNote"></div>
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-              <div style="font:600 11px system-ui;color:#0c4a6e;">
-                <strong>Auto Delta:</strong>
+          <div class="toolbar noPrint">
+            <div class="toolbarSection" id="siteDateSection">
+              <div class="sectionLabel">Site &amp; Date</div>
+              <div class="toolFieldRow">
+                <div class="toolField">
+                  <label for="siteInput">Site</label>
+                  <input type="text" id="siteInput" list="siteSuggestions" placeholder="e.g. ONT8" maxlength="12" autocomplete="off" />
+                  <datalist id="siteSuggestions"></datalist>
+                </div>
+                <div class="toolField">
+                  <label for="pidDatePicker">Date</label>
+                  <input type="date" id="pidDatePicker" value="${state.selectedDate || getCurrentDatePST()}" />
+                </div>
               </div>
-              <label class="variance-toggle">
-                <input type="checkbox" id="varianceToggleCheckbox" ${state.varianceEnabled ? 'checked' : ''}>
-                <span class="variance-toggle-slider"></span>
-              </label>
+              <div class="siteHint" id="siteHint"></div>
             </div>
-            <div id="varianceSummary" style="font-size:11px;"></div>
+
+            <div class="toolbarSection">
+              <div class="sectionLabel">Shift <span style="font-weight:500;text-transform:none;letter-spacing:0;">(hold CTRL to multi-select)</span></div>
+              <div class="shiftSelector" id="shiftSelector"></div>
+            </div>
+
+            <div class="varianceDisplay toolbarSection noPrint" id="varianceDisplay">
+              <div id="deltaDisabledNote"></div>
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <div class="sectionLabel" style="text-transform:none;letter-spacing:0;font:600 11px system-ui;color:#0c4a6e;">
+                  <strong>Auto Delta</strong>
+                </div>
+                <label class="variance-toggle">
+                  <input type="checkbox" id="varianceToggleCheckbox" ${state.varianceEnabled ? 'checked' : ''}>
+                  <span class="variance-toggle-slider"></span>
+                </label>
+              </div>
+              <div id="varianceSummary" style="font-size:11px;"></div>
+            </div>
           </div>
 
           <div class="lastRefreshed" id="lastRefreshed">
@@ -1583,6 +1636,52 @@
         </div>
       </div>`;
     document.body.appendChild(wrap);
+
+    // ── Site selector: lets the dashboard pull data for FCs other than the
+    // one baked into the current page URL. Selecting a site here overrides
+    // getWarehouseId() for every subsequent fetch until changed again.
+    const siteInput = qs('#siteInput', wrap);
+    const siteSuggestions = qs('#siteSuggestions', wrap);
+    const siteBadge = qs('#siteBadge', wrap);
+    const siteHint = qs('#siteHint', wrap);
+    const urlSite = getDefaultSiteFromUrl();
+
+    function renderSiteSuggestions() {
+      const options = Array.from(new Set([urlSite, ...state.recentSites]));
+      siteSuggestions.innerHTML = options.map(s => `<option value="${s}"></option>`).join('');
+    }
+    function updateSiteBadge() {
+      siteBadge.textContent = getWarehouseId();
+      siteHint.textContent = state.selectedSite && state.selectedSite !== urlSite
+        ? `Overriding page site (${urlSite}) — click "Run All" to pull ${state.selectedSite} data.`
+        : `Using page site. Type a different site code to pull data from elsewhere.`;
+    }
+    function commitSite(raw) {
+      const site = String(raw || '').trim().toUpperCase();
+      if (!site) {
+        state.selectedSite = null;
+        siteInput.value = urlSite;
+      } else {
+        state.selectedSite = site;
+        state.recentSites = [site, ...state.recentSites.filter(s => s !== site)].slice(0, 8);
+      }
+      saveState();
+      renderSiteSuggestions();
+      updateSiteBadge();
+    }
+
+    siteInput.value = state.selectedSite || urlSite;
+    renderSiteSuggestions();
+    updateSiteBadge();
+
+    siteInput.addEventListener('change', (e) => commitSite(e.target.value));
+    siteInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        commitSite(e.target.value);
+        siteInput.blur();
+      }
+    });
 
     const shiftSel = qs('#shiftSelector', wrap);
     Object.keys(CFG.shifts).forEach(key => {
